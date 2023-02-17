@@ -1,29 +1,26 @@
-// Import necessary modules
-const fetch = require("node-fetch");
+addEventListener("fetch", (event) => {
+  event.respondWith(handleRequest(event.request));
+});
 
-// Define your serverless function
-module.exports = async (req, res) => {
-  const url = new URL(req.url);
+async function handleRequest(request) {
+  const url = new URL(request.url);
   const path = url.pathname;
   if (!path.toLowerCase().startsWith("/api")) {
-    res.status(400).send(
-      "libDrive for Cloudflare doesn't work on its own. It is only an extension to the backend."
+    return new Response(
+      "libDrive for Cloudflare doesn't work on its own. It is only an extention to the backend."
     );
   } else if (path.toLowerCase().startsWith("/api/v1/download")) {
-    const session = JSON.parse(Buffer.from(url.searchParams.get("session"), "base64").toString("ascii"));
+    const session = JSON.parse(atob(url.searchParams.get("session")));
     const drive = new googleDrive(session);
-    const range = req.headers.range || "";
-    const resp = await drive.downloadAPI(range, session);
-    res.set(resp.headers);
-    res.status(resp.status);
-    res.send(await resp.buffer());
+    return drive.downloadAPI(request.headers.get("Range") || "", session);
   }
-};
+}
 
-// Define the googleDrive class
 class googleDrive {
   constructor(session) {
-    let token_expiry = new Date(session.token_expiry || new Date().toISOString());
+    let token_expiry = new Date(
+      session.token_expiry || new Date().toISOString()
+    );
     token_expiry = token_expiry.getTime();
     this.config = {
       access_token: session.access_token,
@@ -82,3 +79,32 @@ class googleDrive {
       }
     }
   }
+
+  async getAccessToken() {
+    const url = "https://www.googleapis.com/oauth2/v4/token";
+    const headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    const post_data = {
+      client_id: this.config.client_id,
+      client_secret: this.config.client_secret,
+      refresh_token: this.config.refresh_token,
+      grant_type: "refresh_token",
+    };
+    let requestOption = {
+      method: "POST",
+      headers: headers,
+      body: this.enQuery(post_data),
+    };
+    const response = await fetch(url, requestOption);
+    return await response.json();
+  }
+
+  enQuery(data) {
+    const ret = [];
+    for (let d in data) {
+      ret.push(encodeURIComponent(d) + "=" + encodeURIComponent(data[d]));
+    }
+    return ret.join("&");
+  }
+}
